@@ -1,0 +1,86 @@
+# GeoMarketingLab — feature dictionary for gold.cell_features (doc §5.2).
+# Used by: model input selection, SHAP driver labels, the explain_location tool, and the
+# `geomlab://feature-dictionary` MCP resource. Attractor (att_*) and spatial-context
+# (ctx1_* / ctx2_*) features are generated from poi_categories.yaml / `context` below.
+#
+# direction: how a higher value is usually read in a site-selection explanation
+#            (+ more demand/access, - less, ~ depends on business type). Informational only;
+#            the model's SHAP sign is what explanations report.
+
+families:
+  demand:        "Demand / demographics"
+  economic:      "Economic activity"
+  attractors:    "Complementarity / attractors"
+  accessibility: "Accessibility"
+  environment:   "Environment"
+  context:       "Spatial context (k-ring neighbours)"
+
+features:
+  # --- demand ------------------------------------------------------------------------
+  pop_cell:                 {family: demand, unit: residents, source: "WorldPop (GEE)", direction: "+", description: "Residents living in the hexagon"}
+  pop_density_km2:          {family: demand, unit: residents/km², source: "WorldPop (GEE)", direction: "+", description: "Population density of the hexagon"}
+  pop_500m:                 {family: demand, unit: residents, source: "WorldPop (GEE)", direction: "+", description: "Residents within 500 m of the hexagon centre"}
+  pop_1km:                  {family: demand, unit: residents, source: "WorldPop (GEE)", direction: "+", description: "Residents within 1 km of the hexagon centre"}
+  hcp_population:           {family: demand, unit: residents, source: "HCP RGPH 2024", direction: "+", description: "Census population disaggregated to the hexagon (population-weighted)"}
+  hcp_menages:              {family: demand, unit: households, source: "HCP RGPH 2024", direction: "+", description: "Census households disaggregated to the hexagon"}
+  hcp_mean_household_size:  {family: demand, unit: persons, source: "HCP RGPH 2024", direction: "~", description: "Mean household size of the overlapping commune/arrondissement"}
+  hcp_share_15_34:          {family: demand, unit: "%", source: "HCP RGPH 2024", direction: "~", description: "Share of residents aged 15–34"}
+  hcp_pct_educ_superieur:   {family: demand, unit: "%", source: "HCP RGPH 2024", direction: "~", description: "Share with higher education"}
+  hcp_pct_educ_lycee:       {family: demand, unit: "%", source: "HCP RGPH 2024", direction: "~", description: "Share with secondary (lycée) education"}
+  hcp_taux_activite:        {family: demand, unit: "%", source: "HCP RGPH 2024", direction: "+", description: "Labour-force participation rate"}
+  hcp_employment_rate:      {family: demand, unit: "%", source: "HCP RGPH 2024", direction: "+", description: "100 − unemployment rate"}
+  hcp_taux_analphabetisme_15plus: {family: demand, unit: "%", source: "HCP RGPH 2024", direction: "~", description: "Illiteracy rate, 15+"}
+  hcp_pct_appartement:      {family: demand, unit: "%", source: "HCP RGPH 2024", direction: "~", description: "Share of dwellings that are apartments"}
+  hcp_pct_villa:            {family: demand, unit: "%", source: "HCP RGPH 2024", direction: "~", description: "Share of dwellings that are villas"}
+  hcp_pct_maison_moderne:   {family: demand, unit: "%", source: "HCP RGPH 2024", direction: "~", description: "Share of modern Moroccan houses"}
+  hcp_pct_bidonville:       {family: demand, unit: "%", source: "HCP RGPH 2024", direction: "~", description: "Share of shanty-town dwellings"}
+  hcp_pct_logement_precaire_total: {family: demand, unit: "%", source: "HCP RGPH 2024", direction: "~", description: "Share of precarious dwellings"}
+  hcp_pct_transport_voiture: {family: demand, unit: "%", source: "HCP RGPH 2024", direction: "~", description: "Commuters using a car"}
+  hcp_pct_transport_bus:    {family: demand, unit: "%", source: "HCP RGPH 2024", direction: "~", description: "Commuters using the bus"}
+  hcp_pct_transport_pied:   {family: demand, unit: "%", source: "HCP RGPH 2024", direction: "~", description: "Commuters walking"}
+  # --- economic activity -------------------------------------------------------------
+  nightlight_mean:          {family: economic, unit: nW/cm²/sr, source: "VIIRS DNB (GEE)", direction: "+", description: "Mean night-time light radiance over the last 12 months (activity proxy)"}
+  nightlight_trend:         {family: economic, unit: nW/cm²/sr per year, source: "VIIRS DNB (GEE)", direction: "+", description: "Trend of night-time light (growth of activity)"}
+  builtup_ratio:            {family: economic, unit: "0–1", source: "Dynamic World (GEE)", direction: "+", description: "Built-up land share"}
+  ndbi_mean:                {family: economic, unit: index, source: "Sentinel-2 (GEE)", direction: "+", description: "Normalised Difference Built-up Index"}
+  building_count:           {family: economic, unit: buildings, source: OSM, direction: "+", description: "Number of mapped buildings in the hexagon"}
+  building_footprint_ratio: {family: economic, unit: "0–1", source: OSM, direction: "+", description: "Building footprint area / hexagon area"}
+  hcp_nb_etablissements_total: {family: economic, unit: establishments, source: "HCP CEE", direction: "+", description: "Economic establishments (disaggregated)"}
+  hcp_nb_commerce:          {family: economic, unit: establishments, source: "HCP CEE", direction: "+", description: "Retail/commerce establishments (disaggregated)"}
+  hcp_nb_services:          {family: economic, unit: establishments, source: "HCP CEE", direction: "+", description: "Service establishments (disaggregated)"}
+  hcp_emplois_permanents:   {family: economic, unit: jobs, source: "HCP CEE", direction: "+", description: "Permanent jobs (disaggregated)"}
+  # --- accessibility -----------------------------------------------------------------
+  road_len_primary_m:       {family: accessibility, unit: m, source: OSM, direction: "+", description: "Length of primary/trunk roads in the hexagon"}
+  road_len_secondary_m:     {family: accessibility, unit: m, source: OSM, direction: "+", description: "Length of secondary roads in the hexagon"}
+  road_len_tertiary_m:      {family: accessibility, unit: m, source: OSM, direction: "+", description: "Length of tertiary roads in the hexagon"}
+  road_len_local_m:         {family: accessibility, unit: m, source: OSM, direction: "+", description: "Length of residential/local roads in the hexagon"}
+  road_density_km_km2:      {family: accessibility, unit: km/km², source: OSM, direction: "+", description: "Road density"}
+  intersection_density_km2: {family: accessibility, unit: junctions/km², source: OSM, direction: "+", description: "Street intersections (3+ segments) per km²"}
+  dist_main_road_m:         {family: accessibility, unit: m, source: OSM, direction: "-", description: "Distance to the nearest primary/secondary road"}
+  walk_pop_10min:           {family: accessibility, unit: residents, source: "OSM + WorldPop", direction: "+", description: "Residents within a 10-minute walk on the street network"}
+  # --- environment -------------------------------------------------------------------
+  ndvi_mean:                {family: environment, unit: index, source: "Sentinel-2 (GEE)", direction: "~", description: "Vegetation index (NDVI)"}
+  ndwi_mean:                {family: environment, unit: index, source: "Sentinel-2 (GEE)", direction: "~", description: "Water index (NDWI)"}
+  trees_ratio:              {family: environment, unit: "0–1", source: "Dynamic World (GEE)", direction: "~", description: "Tree cover share"}
+  grass_ratio:              {family: environment, unit: "0–1", source: "Dynamic World (GEE)", direction: "~", description: "Grass cover share"}
+  water_ratio:              {family: environment, unit: "0–1", source: "Dynamic World (GEE)", direction: "-", description: "Water share"}
+  bare_ratio:               {family: environment, unit: "0–1", source: "Dynamic World (GEE)", direction: "-", description: "Bare ground share"}
+  landuse_entropy:          {family: environment, unit: "0–1", source: OSM, direction: "~", description: "Land-use mix (normalised Shannon entropy)"}
+  landuse_share_residential: {family: environment, unit: "0–1", source: OSM, direction: "~", description: "Residential land-use share"}
+  landuse_share_commercial: {family: environment, unit: "0–1", source: OSM, direction: "+", description: "Commercial/retail land-use share"}
+  landuse_share_green:      {family: environment, unit: "0–1", source: OSM, direction: "~", description: "Green land-use share"}
+  dist_center_m:            {family: environment, unit: m, source: derived, direction: "-", description: "Distance to the population-weighted city centre (urban vs peri-urban)"}
+
+# att_<category>_<ring>m and att_total_<ring>m are generated from poi_categories.yaml.
+attractor_template: {family: attractors, unit: POIs, source: OSM, direction: "+",
+                     description: "Number of {category} POIs within {ring} m"}
+
+# Spatial context: mean of these features over neighbours at H3 distance ≤ k (dbt gold).
+context:
+  rings: [1, 2]
+  features: [pop_cell, nightlight_mean, builtup_ratio, att_total_1000m, intersection_density_km2,
+             ndvi_mean, building_footprint_ratio]
+
+# Never model inputs (identifiers, flags, competition → saturation penalty only).
+non_features: [city, h3_id, district, lon, lat, area_m2, data_date, is_candidate, osm_pois_1km,
+               hcp_coverage, has_gee, has_hcp, missing_sources]

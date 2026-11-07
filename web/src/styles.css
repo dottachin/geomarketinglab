@@ -1,0 +1,48 @@
+:root {
+  --bg: #f7f7f5; --panel: #ffffff; --text: #1d1d1b; --muted: #6b6b66; --line: #e3e2dd;
+  --accent: #c2410c; --pos: #c2410c; --neg: #2563eb; --warn-bg: #fff7ed;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #151514; --panel: #1f1f1d; --text: #ecebe6; --muted: #a3a29c; --line: #34332f; --warn-bg: #3a2614; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+.layout { display: grid; grid-template-columns: 320px 1fr 360px; height: 100vh; }
+.sidebar, .chat { background: var(--panel); overflow-y: auto; padding: 16px; border-right: 1px solid var(--line); }
+.chat { border-right: 0; border-left: 1px solid var(--line); display: flex; flex-direction: column; }
+h1 { font-size: 18px; margin: 0 0 12px; } h2 { font-size: 15px; margin: 0 0 8px; } h3 { font-size: 13px; margin: 14px 0 6px; }
+.controls label { display: block; margin-bottom: 10px; color: var(--muted); font-size: 12px; }
+.controls select, .controls input[type="number"] { display: block; width: 100%; margin-top: 4px; padding: 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); }
+.controls .check { display: flex; gap: 8px; align-items: flex-start; color: var(--text); }
+.meta { color: var(--muted); font-size: 12px; } .error { color: #b91c1c; }
+.attribution { color: var(--muted); font-size: 11px; margin-top: 20px; }
+.map, .map-wrap, .map-canvas { position: relative; height: 100%; width: 100%; }
+.legend { position: absolute; left: 12px; bottom: 24px; background: var(--panel); padding: 6px 10px; border-radius: 6px; display: flex; gap: 8px; align-items: center; font-size: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.15); }
+.ramp { width: 90px; height: 10px; border-radius: 3px; background: linear-gradient(90deg, #fff5eb, #fdae6b, #f16913, #a63603, #5e1602); }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: #2563eb; border: 1px solid #fff; }
+.panel { border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-top: 12px; }
+.panel-head { display: flex; justify-content: space-between; align-items: center; }
+.panel button { border: 0; background: none; color: var(--text); font-size: 18px; cursor: pointer; }
+.h3 { font-size: 11px; color: var(--muted); }
+.kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 10px 0; }
+.kpis div { display: flex; flex-direction: column; } .kpis span { font-size: 11px; color: var(--muted); } .kpis b { font-size: 15px; font-variant-numeric: tabular-nums; }
+.warn { background: var(--warn-bg); padding: 6px 8px; border-radius: 6px; font-size: 12px; }
+.drivers { list-style: none; padding: 0; margin: 0; }
+.drivers li { display: grid; grid-template-columns: 1fr 70px; grid-template-rows: auto 6px; gap: 2px 8px; margin-bottom: 6px; font-size: 12px; }
+.drivers .lbl { grid-column: 1; } .drivers .val { grid-column: 2; grid-row: 1 / span 2; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+.drivers .bar { grid-column: 1; height: 6px; border-radius: 3px; } .bar.pos { background: var(--pos); } .bar.neg { background: var(--neg); }
+.plain { padding-left: 16px; margin: 0; font-size: 12px; }
+.messages { flex: 1; overflow-y: auto; }
+.msg { margin: 8px 0; } .msg .content { white-space: pre-wrap; padding: 8px 10px; border-radius: 8px; }
+.msg.user .content { background: var(--accent); color: #fff; margin-left: 30px; }
+.msg.assistant .content { background: var(--bg); border: 1px solid var(--line); }
+.hint { color: var(--muted); font-size: 12px; }
+.cites { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.cite { font-size: 11px; padding: 2px 6px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--text); }
+.cite.model { cursor: pointer; border-color: var(--accent); } .cite.doc { border-style: dashed; }
+form { display: flex; gap: 6px; margin-top: 8px; }
+form input { flex: 1; padding: 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+form button { padding: 8px 12px; border: 0; border-radius: 6px; background: var(--accent); color: #fff; cursor: pointer; }
+@media (max-width: 900px) {
+  .layout { grid-template-columns: 1fr; grid-template-rows: auto 60vh auto; height: auto; }
+}

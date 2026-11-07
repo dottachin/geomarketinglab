@@ -1,0 +1,30 @@
+# GeoMarketingLab — pilot cities (architecture doc §3.2, §11 "pilot city first").
+#
+#   display_name    label shown in the UI and returned by the MCP resource
+#   osm_query       place name geocoded once (Nominatim via OSMnx) to get the boundary
+#   bbox            optional [south, west, north, east] (EPSG:4326) used instead of geocoding
+#   crs_projected   metric CRS for every distance/area computation (doc §4.2: EPSG:26191
+#                   Merchich / Nord Maroc or EPSG:32629 UTM 29N). Storage is always EPSG:4326.
+#   h3_resolution   doc §3.2 recommends res 8–9; res 9 ≈ 0.105 km² per cell
+#   hcp_name_aliases_key   key under config/hcp.yaml name_aliases (defaults to the slug)
+
+casablanca:
+  display_name: "Casablanca"
+  osm_query: "Casablanca, Morocco"
+  bbox: null
+  crs_projected: 32629
+  h3_resolution: 9
+
+rabat:
+  display_name: "Rabat"
+  osm_query: "Rabat, Morocco"
+  bbox: null
+  crs_projected: 32629
+  h3_resolution: 9
+
+marrakech:
+  display_name: "Marrakech"
+  osm_query: "Marrakesh, Morocco"
+  bbox: null
+  crs_projected: 32629
+  h3_resolution: 9

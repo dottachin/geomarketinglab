@@ -1,0 +1,33 @@
+name: geomlab
+version: "1.0.0"
+config-version: 2
+profile: geomlab
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+on-run-start:
+  - "{{ configure_lake() }}"
+
+vars:
+  # candidate-cell rule (overridden from config/model.yaml by `geomlab dbt`)
+  min_population: 50
+  min_attractors_1km: 3
+  min_builtup_ratio: 0.15
+  # spatial context (overridden from config/features.yaml)
+  context_rings: [1, 2]
+  context_features: [pop_cell, nightlight_mean, builtup_ratio, att_total_1000m, intersection_density_km2, ndvi_mean, building_footprint_ratio]
+
+models:
+  geomlab:
+    staging:
+      +materialized: view
+      +schema: silver
+    intermediate:
+      +materialized: ephemeral
+    gold:
+      +materialized: table
+      +schema: gold

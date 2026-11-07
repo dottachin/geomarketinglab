@@ -1,0 +1,321 @@
+# GeoMarketingLab — Morocco HCP (Haut-Commissariat au Plan) RGPH 2024 data config (ported from pfe-old)
+# ---------------------------------------------------------------------------
+# Five commune/arrondissement-level XLSX files from RGPH 2024.
+# All files are public open data; no credentials required.
+# Download date recorded in data/raw/hcp/manifest.json at runtime.
+#
+# Geographic-code hierarchy:
+#   1 digit  = région
+#   4 digits = préfecture/province
+#   7 digits = commune
+#   8 digits = préfecture d'arrondissements (codes like 6141010X)
+#   9+ digits = arrondissement (codes like 614101XX)
+#
+# Attribution: Haut-Commissariat au Plan, Maroc — RGPH 2024.
+# ---------------------------------------------------------------------------
+
+files:
+  population:
+    url: "https://www.hcp.ma/file/242341/"
+    filename: "pop_legale.xlsx"
+    description: "Population légale et ménages par collectivité territoriale"
+    sheet: "Population_légale"
+    header_rows: [5, 6]          # 0-indexed rows that form the bilingual header
+    data_start_row: 7            # 0-indexed first data row
+    columns:
+      # position (0-indexed): canonical feature name
+      0: "name_fr"
+      1: "marocains"
+      2: "etrangers"
+      3: "population"
+      4: "menages"
+      5: "name_ar"
+      6: "geo_code"
+
+  housing:
+    url: "https://www.hcp.ma/file/246208/"
+    filename: "housing.xlsx"
+    description: "Indicateurs communaux du parc logement urbain 2024"
+    sheet: "Indicateurs-parc logement-urb"
+    header_rows: [1, 2, 3, 4]
+    data_start_row: 5
+    columns:
+      # We derive flat names by position from the merged header
+      0: "geo_code"
+      1: "name_fr"
+      2: "total_logements"
+      3: "pct_logement_occupe"
+      4: "pct_logement_non_occupe"
+      # 5: vacant, 6: seasonal — sub-category of non-occupied, dropped (redundant)
+      # 7..15: housing-type sub-columns
+      7: "pct_villa"
+      8: "pct_appartement"
+      9: "pct_maison_trad"
+      10: "pct_maison_moderne"
+      11: "pct_logement_salubre_total"
+      12: "pct_bidonville"
+      13: "pct_logement_rural"
+      14: "pct_logement_precaire_autre"
+      15: "pct_logement_precaire_total"
+      # 16..18: age of housing
+      16: "pct_logement_moins20ans"
+      17: "pct_logement_20a50ans"
+      18: "pct_logement_plus50ans"
+      # 19..33: age by type — dropped (too granular for zone-level use)
+      # 34..46: precarious sub-types by age — dropped
+      47: "pct_mur_beton_brique"
+      48: "pct_mur_pierre"
+      49: "pct_mur_autres"
+      50: "pct_toit_dalle"
+      51: "pct_toit_planches_bois"
+      52: "pct_toit_tole"
+      53: "pct_toit_autres"
+      54: "pct_electricite"
+      55: "pct_eau_potable"
+      56: "pct_assainissement"
+      57: "pct_deficit_logement"
+
+  transport:
+    url: "https://www.hcp.ma/file/248301/"
+    filename: "transport.xlsx"
+    description: "Mode de transport utilisé pour se rendre au lieu de travail"
+    sheet: "Ensemble"            # use the "Ensemble" (all sexes) sheet
+    header_rows: [0, 1, 2, 3]
+    data_start_row: 4
+    columns:
+      # We keep only the "Sexe: Ensemble" block (cols 0..15)
+      0: "geo_code"
+      1: "name_fr"
+      2: "pop_active_occupee_15plus"
+      3: "pct_transport_pied"
+      4: "pct_transport_moto_velo"
+      5: "pct_transport_voiture"
+      6: "pct_transport_bus"
+      7: "pct_transport_taxi"
+      8: "pct_transport_employeur"
+      9: "pct_transport_train"
+      10: "pct_transport_tram"
+      11: "pct_transport_informel"
+      # 12: animaux — rural only, irrelevant for urban zones; dropped
+      13: "pct_transport_autre"
+      # 14: ne se deplace pas — dropped (redundant with total)
+      # 15: total (always 100) — dropped
+
+  economic:
+    url: "https://www.hcp.ma/file/242672/"
+    filename: "economic.xlsx"
+    description: "Cartographie des établissements économiques (CEE 2023/2024)"
+    sheet: "CEE"
+    header_rows: [5, 6]
+    data_start_row: 7
+    columns:
+      # cols 0..5: geographic code parts; col 6: name; col 7 onward: counts
+      5: "geo_code_str"           # formatted code like "06.141.01.01."
+      6: "name_fr"
+      7: "nb_etablissements_total"
+      8: "nb_services_publics"
+      9: "nb_associations"
+      10: "nb_souks"
+      11: "nb_etablissements_lucratif"
+      12: "emplois_permanents"
+      13: "nb_industrie"
+      14: "nb_construction"
+      15: "nb_commerce"
+      16: "nb_services"
+      # 17..21: by employment class — kept as indicators
+      17: "nb_etab_1employe"
+      18: "nb_etab_2a3"
+      19: "nb_etab_4a9"
+      20: "nb_etab_10a49"
+      21: "nb_etab_50plus"
+      # 22..28: by creation date — dropped (too granular for zone-level)
+
+  socioeco:
+    url: "https://www.hcp.ma/file/242671/"
+    filename: "socioeco.xlsx"
+    description: "Indicateurs démographiques et socioéconomiques par commune"
+    sheet: "Population_Urbaine"   # use the urban sheet for city zones
+    header_rows: [0, 1, 2]
+    data_start_row: 3
+    columns:
+      # The sheet has 200+ columns; we extract a curated subset by position.
+      # Positions are 0-indexed in the flattened header.
+      0: "geo_code"
+      1: "name_fr"
+      # Population
+      2: "pop_legale"
+      3: "pop_municipale"
+      4: "pct_masculin"
+      5: "pct_feminin"
+      # Age structure (quinquennial %)
+      6: "pct_age_0_4"
+      7: "pct_age_5_9"
+      8: "pct_age_10_14"
+      9: "pct_age_15_19"
+      10: "pct_age_20_24"
+      11: "pct_age_25_29"
+      12: "pct_age_30_34"
+      13: "pct_age_35_39"
+      14: "pct_age_40_44"
+      15: "pct_age_45_49"
+      16: "pct_age_50_54"
+      17: "pct_age_55_59"
+      18: "pct_age_60_64"
+      19: "pct_age_65_69"
+      20: "pct_age_70_74"
+      21: "pct_age_75plus"
+      # Marital status (col 22 = pop 15+, 23..26 = %)
+      22: "pop_15plus"
+      23: "pct_celibataire"
+      24: "pct_marie"
+      25: "pct_divorce"
+      26: "pct_veuf"
+      27: "age_moyen_mariage"
+      28: "icf"                   # indicateur conjoncturel de fécondité
+      29: "descendance_finale"
+      30: "pct_handicap"
+      # Education
+      31: "pop_7_12ans"
+      32: "taux_scolarisation_6_11ans"
+      33: "pop_10plus"
+      34: "taux_analphabetisme_10plus"
+      35: "pop_15plus_bis"
+      36: "taux_analphabetisme_15plus"
+      # Language literacy
+      37: "pop_alphabete_10plus"
+      38: "pct_lit_arabe"
+      39: "pct_lit_amazigh"
+      40: "pct_lit_anglais"
+      41: "pct_lit_francais"
+      # Education level
+      42: "pct_educ_aucun"
+      43: "pct_educ_prescolaire"
+      44: "pct_educ_primaire"
+      45: "pct_educ_college"
+      46: "pct_educ_lycee"
+      47: "pct_educ_superieur"
+      # Activity / employment
+      # col 53 = Population de 15 ans et plus (3rd occurrence, same field as col 22/35)
+      # col 54 = Population active de 15 ans et plus (count)
+      # col 55 = Population inactive de 15 ans et plus (count)
+      # col 56 = Taux d'activité des 15 ans et plus (%) — rate, ~40-50% urban
+      # col 57 = Taux de chômage (%) — rate, ~10-30% urban
+      # col 58 = Population active occupée de 15 ans et plus (count)
+      54: "pop_active_15plus"
+      55: "pop_inactive_15plus"
+      56: "taux_activite"
+      57: "taux_chomage"
+      58: "pop_active_occupee_count"
+      # Employment status (% of actifs occupés) — cols 59-66
+      59: "pct_employeur"
+      60: "pct_independant"
+      61: "pct_salarie_public"
+      62: "pct_salarie_prive"
+      63: "pct_aide_familial"
+      64: "pct_apprenti"
+      65: "pct_cooperateur"
+      66: "pct_autre_statut"
+
+# ---------------------------------------------------------------------------
+# City-specific HCP unit → OSM admin name alias tables.
+# Used when the HCP French name does not exactly match the OSM name.
+# Keys are normalised HCP names (lowercased, diacritics stripped).
+# Values are the preferred canonical label used in the spatial join.
+# ---------------------------------------------------------------------------
+name_aliases:
+  casablanca:
+    # --- HCP name (normalised, diacritics stripped) → OSM cleaned name ---
+    # The OSM level-10 names after stripping multilingual suffixes are:
+    #   "Arrondissement d'Anfa", "Arrondissement de Hay Hassani",
+    #   "Arrondissement de Sidi Moumen", "Arrondissement de Moulay Rachid",
+    #   "Arrondissement de Sidi Othmane", "Arrondissement de Ben M'Sick",
+    #   "Arrondissement de Sbata", "Arrondissement d'Aïn Chock",
+    #   "Arrondissement d'Al Fida", "Arrondissement de Mers Sultan",
+    #   "Arrondissement des Roches noires", "Arrondissement de Hay Mohammadi",
+    #   "Arrondissement d'Aïn Sebaâ", "Arrondissement de Sidi Bernoussi",
+    #   "Arrondissement du Maârif", "Arrondissement de Sidi Belyout"
+    # Key mapping challenge: HCP uses "Asoukhour Assawda" / "Assoukhour Assawda"
+    # but OSM uses "Roches noires" (French for Black Rocks = Arabic Assoukhour Assawda).
+
+    # HCP leaf name → OSM full name (post-cleaned, including prefix)
+    "anfa":                                 "Arrondissement d'Anfa"
+    "maarif":                               "Arrondissement du Maârif"
+    "el maarif":                            "Arrondissement du Maârif"
+    "sidi belyout":                         "Arrondissement de Sidi Belyout"
+    "al-fida":                              "Arrondissement d'Al Fida"
+    "al fida":                              "Arrondissement d'Al Fida"
+    "fida":                                 "Arrondissement d'Al Fida"
+    "mers-sultan":                          "Arrondissement de Mers Sultan"
+    "mers sultan":                          "Arrondissement de Mers Sultan"
+    "ain-sebaa":                            "Arrondissement d'Aïn Sebaâ"
+    "ain sebaa":                            "Arrondissement d'Aïn Sebaâ"
+    "ain-sebaa":                            "Arrondissement d'Aïn Sebaâ"
+    # HCP calls it "Asoukhour Assawda"; OSM uses "Roches noires" (French translation)
+    "asoukhour assawda":                    "Arrondissement des Roches noires"
+    "assoukhour assawda":                   "Arrondissement des Roches noires"
+    "roches noires":                        "Arrondissement des Roches noires"
+    "hay-mohammadi":                        "Arrondissement de Hay Mohammadi"
+    "hay mohammadi":                        "Arrondissement de Hay Mohammadi"
+    "hay-hassani":                          "Arrondissement de Hay Hassani"
+    "hay hassani":                          "Arrondissement de Hay Hassani"
+    "ain-chock":                            "Arrondissement d'Aïn Chock"
+    "ain chock":                            "Arrondissement d'Aïn Chock"
+    "ain chok":                             "Arrondissement d'Aïn Chock"
+    "sidi bernoussi":                       "Arrondissement de Sidi Bernoussi"
+    "sidi moumen":                          "Arrondissement de Sidi Moumen"
+    "ben m'sick":                           "Arrondissement de Ben M'Sick"
+    "ben m'sick":                           "Arrondissement de Ben M'Sick"
+    "ben msick":                            "Arrondissement de Ben M'Sick"
+    "sbata":                                "Arrondissement de Sbata"
+    "moulay rachid":                        "Arrondissement de Moulay Rachid"
+    "sidi othmane":                         "Arrondissement de Sidi Othmane"
+    # Méchouar / Mechouar: OSM level-8 commune, may fall back
+    "mechouar de casablanca":               "Méchouar de Casablanca"
+    "mechouar":                             "Méchouar de Casablanca"
+
+# HCP geographic code prefixes that identify Casablanca arrondissements/communes.
+# Codes starting with these prefixes belong to the Casablanca urban area.
+city_geo_code_prefixes:
+  casablanca:
+    - "6141010"   # Commune de Casablanca (prefix shared by all arrondissements)
+    - "61410"     # Préfectures d'arrondissements (61410100 … 61410170)
+  rabat:
+    - "442101"    # Commune de Rabat (4421010) and its arrondissements 44210101 … 44210109
+    - "444101"    # Salé arrondissements (Bab Lamrissa, Bettana, Hssaine) overlap the geocoded Rabat boundary
+  marrakech:
+    - "735101"    # Commune de Marrakech (7351010), arrondissements 73510101 … 73510113
+
+# ---------------------------------------------------------------------------
+# Disaggregation to H3 (architecture doc §3.2).
+#   extensive: counts that are SPLIT across hexagons, proportionally to WorldPop
+#              population in the hexagon (fallback: overlap area).
+#   intensive: rates / percentages that are AVERAGED, weighted by overlap area.
+# Only these columns reach silver.cell_hcp; everything else stays in silver.hcp_units.
+# ---------------------------------------------------------------------------
+disaggregation:
+  extensive:
+    - population
+    - menages
+    - nb_etablissements_total
+    - nb_commerce
+    - nb_services
+    - emplois_permanents
+  intensive:
+    - mean_household_size
+    - pct_age_15_19
+    - pct_age_20_24
+    - pct_age_25_29
+    - pct_age_30_34
+    - pct_educ_superieur
+    - pct_educ_lycee
+    - taux_activite
+    - taux_chomage
+    - taux_analphabetisme_15plus
+    - pct_appartement
+    - pct_villa
+    - pct_maison_moderne
+    - pct_bidonville
+    - pct_logement_precaire_total
+    - pct_transport_voiture
+    - pct_transport_bus
+    - pct_transport_pied

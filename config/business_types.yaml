@@ -1,0 +1,41 @@
+# GeoMarketingLab — business types (doc §11: pilot with 3–5 types first).
+# Adding a business type = add its OSM selectors to poi_categories.yaml (role: business)
+# and an entry here. No Python change is needed; the multi-task models learn a new
+# type embedding on the next training run.
+#
+#   display_name            label (FR/EN) used by the UI and the LLM
+#   catchment_m             radius used for the saturation penalty (demand vs competitors)
+#   residents_per_business  rough capacity: how many residents one outlet can serve.
+#                           expected_capacity = population_in_catchment / residents_per_business.
+#                           Order-of-magnitude assumptions, documented in docs/methodology.md.
+#   saturation_lambda       strength of the penalty: final = suitability * (1 - λ * saturation)
+
+pharmacy:
+  display_name: { en: "Pharmacy", fr: "Pharmacie", ar: "صيدلية" }
+  catchment_m: 500
+  residents_per_business: 3500
+  saturation_lambda: 0.6
+
+cafe:
+  display_name: { en: "Café", fr: "Café", ar: "مقهى" }
+  catchment_m: 300
+  residents_per_business: 1500
+  saturation_lambda: 0.4
+
+bakery:
+  display_name: { en: "Bakery", fr: "Boulangerie", ar: "مخبزة" }
+  catchment_m: 400
+  residents_per_business: 2500
+  saturation_lambda: 0.5
+
+gym:
+  display_name: { en: "Gym", fr: "Salle de sport", ar: "قاعة رياضة" }
+  catchment_m: 1000
+  residents_per_business: 12000
+  saturation_lambda: 0.5
+
+supermarket:
+  display_name: { en: "Supermarket", fr: "Supermarché", ar: "سوبرماركت" }
+  catchment_m: 800
+  residents_per_business: 6000
+  saturation_lambda: 0.5

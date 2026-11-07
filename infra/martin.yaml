@@ -1,0 +1,20 @@
+# Martin vector tiles straight from PostGIS (doc §8). Read with the read-only role.
+listen_addresses: "0.0.0.0:3000"
+postgres:
+  connection_string: "${DATABASE_URL_TILES}"
+  auto_publish: false
+  tables:
+    pois:
+      schema: serving
+      table: pois
+      srid: 4326
+      geometry_column: geom
+      geometry_type: POINT
+      properties: {city: text, role: text, category: text, name: text}
+    cells:
+      schema: serving
+      table: cells
+      srid: 4326
+      geometry_column: geom
+      geometry_type: GEOMETRY
+      properties: {h3_id: text, city: text, district: text}

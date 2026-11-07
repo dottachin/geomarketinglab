@@ -1,0 +1,56 @@
+# GeoMarketingLab — training, evaluation and scoring parameters (doc §6).
+
+seed: 42
+
+candidates:
+  # A cell enters training/scoring only if it is plausibly urban; otherwise the model
+  # would trivially learn "no business in the desert/ocean".
+  min_population: 50          # WorldPop residents in the cell
+  min_attractors_1km: 3       # any attractor POI within 1 km
+  min_builtup_ratio: 0.15     # Dynamic World built-up probability
+
+spatial_cv:
+  parent_resolution: 7        # blocks = H3 parents at res 7 (~5 km²), doc §6.3
+  n_folds: 5
+  buffer_rings: 1             # drop training cells within k rings of a test block (no leakage)
+
+metrics:
+  k: [10, 25, 50]             # Precision@k / NDCG@k
+
+models:
+  lightgbm:
+    n_estimators: 400
+    learning_rate: 0.05
+    num_leaves: 31
+    min_child_samples: 20
+    subsample: 0.8
+    colsample_bytree: 0.8
+  mlp:
+    hidden: [128, 64]
+    type_embedding_dim: 8
+    dropout: 0.2
+    epochs: 60
+    lr: 0.001
+    weight_decay: 0.0001
+    batch_size: 512
+  gnn:
+    hidden: 64
+    layers: 2
+    type_embedding_dim: 8
+    dropout: 0.2
+    epochs: 150
+    lr: 0.005
+    weight_decay: 0.0005
+
+selection:
+  metric: pr_auc              # champion = best mean spatial-CV AUC-PR
+  registered_model: geomlab-suitability
+
+scoring:
+  top_drivers: 8              # SHAP drivers stored per (cell, business type)
+  low_confidence:
+    min_osm_pois_1km: 5       # sparse OSM coverage → warn
+    max_missing_sources: 0    # any of GEE / HCP missing → warn
+
+drift:
+  psi_alert: 0.2              # population stability index threshold per feature

@@ -1,0 +1,37 @@
+# GeoMarketingLab — OSM POI taxonomy (single source of truth for silver.poi.category).
+#
+# Every OSM element is mapped to AT MOST ONE category (first match in file order wins).
+# Two roles:
+#   business   a business type the platform can recommend (see business_types.yaml).
+#              Its counts are LABELS + competition (saturation penalty), never model inputs.
+#   attractor  demand generators / complementary POIs (doc §5.2 "Complementarity / attractors").
+#              These ARE model features (counts within 500 m / 1 km rings).
+#
+# Selectors: {key: value} — value "*" matches any value. A list means "any of".
+
+business:
+  pharmacy:     [{amenity: pharmacy}, {healthcare: pharmacy}]
+  cafe:         [{amenity: cafe}]
+  bakery:       [{shop: bakery}, {shop: pastry}]
+  gym:          [{leisure: fitness_centre}, {leisure: sports_centre, sport: fitness}]
+  supermarket:  [{shop: supermarket}, {shop: convenience}]
+
+attractor:
+  school:        [{amenity: school}, {amenity: kindergarten}]
+  university:    [{amenity: university}, {amenity: college}]
+  office:        [{office: "*"}]
+  mosque:        [{amenity: place_of_worship, religion: muslim}]
+  hospital:      [{amenity: hospital}]
+  clinic:        [{amenity: clinic}, {amenity: doctors}, {amenity: dentist}, {healthcare: "*"}]
+  market:        [{amenity: marketplace}]
+  mall:          [{shop: mall}, {shop: department_store}]
+  restaurant:    [{amenity: restaurant}, {amenity: fast_food}]
+  bank:          [{amenity: bank}, {amenity: atm}]
+  tram_stop:     [{railway: tram_stop}, {public_transport: platform, tram: "yes"}]
+  bus_stop:      [{highway: bus_stop}, {public_transport: platform, bus: "yes"}]
+  train_station: [{railway: station}]
+  parking:       [{amenity: parking}]
+  retail_other:  [{shop: "*"}]
+
+# Ring radii (metres, computed in the city's projected CRS) for attractor/competitor counts.
+rings_m: [500, 1000]

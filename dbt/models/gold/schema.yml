@@ -1,0 +1,38 @@
+version: 2
+
+models:
+  - name: gold_cell_features
+    description: "Model-ready features per H3 cell. Column meanings: config/features.yaml."
+    columns:
+      - name: h3_id
+        tests: [not_null]
+      - name: city
+        tests: [not_null]
+      - name: area_m2
+        tests:
+          - not_null
+          - dbt_utils_expression:
+              arguments: {expression: "> 0"}
+      - name: is_candidate
+        tests: [not_null]
+      - name: missing_sources
+        tests:
+          - accepted_values:
+              arguments: {values: [0, 1, 2], quote: false}
+    tests:
+      - unique_combination:
+          arguments: {columns: [city, h3_id]}
+
+  - name: gold_training_set
+    description: "Candidate cells × business types with presence labels and competition (penalty-only) columns."
+    columns:
+      - name: label
+        tests:
+          - not_null
+          - accepted_values:
+              arguments: {values: [0, 1], quote: false}
+      - name: business_type
+        tests: [not_null]
+    tests:
+      - unique_combination:
+          arguments: {columns: [city, h3_id, business_type]}

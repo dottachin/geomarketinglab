@@ -1,0 +1,19 @@
+version: 2
+
+sources:
+  - name: silver
+    description: "Silver Delta tables written by geomlab.features (cleaned, EPSG:4326, one row per entity)."
+    config:
+      external_location: "delta_scan('{{ env_var('LAKE_URI') }}/silver/{name}')"
+    tables:
+      - name: grid
+      - name: h3_neighbors
+      - name: gee_cells
+      - name: hcp_cells
+      - name: cell_demand
+      - name: cell_economic
+      - name: cell_attractors
+      - name: cell_accessibility
+      - name: cell_environment
+      - name: cell_competition
+      - name: poi

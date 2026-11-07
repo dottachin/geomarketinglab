@@ -1,0 +1,11 @@
+# DuckDB is the lakehouse query engine (doc §4.1). Silver Delta tables are read in place
+# with delta_scan; gold tables are materialised in the warehouse file, then published back
+# to the lake as Delta by `geomlab publish-gold`.
+geomlab:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: "{{ env_var('WAREHOUSE_DUCKDB', '../data/warehouse.duckdb') }}"
+      extensions: [delta, httpfs]
+      threads: 4
