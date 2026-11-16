@@ -28,3 +28,10 @@ def test_rejected(sql):
 
 def test_large_limit_is_capped():
     assert "LIMIT 200" in validate("select * from analytics.districts limit 100000")
+
+
+def test_insert_chunks_stay_under_postgres_parameter_limit():
+    from geomlab.serving.db import PG_MAX_PARAMS, rows_per_insert
+
+    for n_cols in (1, 7, 19, 110, 400, 70000):
+        assert rows_per_insert(n_cols) * n_cols <= PG_MAX_PARAMS or rows_per_insert(n_cols) == 1

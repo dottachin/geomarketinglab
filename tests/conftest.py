@@ -14,7 +14,7 @@ def _reset_caches() -> None:
     from geomlab.features import dictionary
 
     for fn in (settings.get_settings, config.cities, config.poi_taxonomy, config.business_types,
-               config.model_config, config.hcp_config, lakehouse.get_lake, dictionary._raw,
+               config.model_config, config.hcp_config, config.naming_config, lakehouse.get_lake, dictionary._raw,
                dictionary.feature_dictionary):
         fn.cache_clear()
 

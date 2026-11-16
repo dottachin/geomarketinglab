@@ -62,7 +62,8 @@ def write_city(lake: Lake, seed: int = 0) -> None:
         return grid["lon"].to_numpy()[idx] + rng.normal(0, 4e-4, n), grid["lat"].to_numpy()[idx] + rng.normal(0, 4e-4, n)
     for cat in tax.attractor:
         lon, lat = sample_points(int(rng.integers(15, 60)))
-        rows += [(f"n{len(rows)+i}", "attractor", cat, None, lo, la) for i, (lo, la) in enumerate(zip(lon, lat, strict=True))]
+        rows += [(f"n{len(rows)+i}", "attractor", cat, f"{cat.title()} {i}", lo, la)
+                 for i, (lo, la) in enumerate(zip(lon, lat, strict=True))]
     for bt in business_types():
         lon, lat = sample_points(int(rng.integers(25, 70)))
         rows += [(f"n{len(rows)+i}", "business", bt, f"{bt} {i}", lo, la) for i, (lo, la) in enumerate(zip(lon, lat, strict=True))]
@@ -70,6 +71,15 @@ def write_city(lake: Lake, seed: int = 0) -> None:
     poi["h3_id"] = geo.points_to_cells(poi["lon"].to_numpy(), poi["lat"].to_numpy(), 9)
     poi = gpd.GeoDataFrame(poi.assign(city=CITY), geometry=gpd.points_from_xy(poi.lon, poi.lat), crs=geo.WGS84)
     lake.write("silver", "poi", poi, predicate=pred)
+
+    # named OSM place nodes (cell naming): fine-grained neighbourhoods in the centre, suburbs around
+    places = pd.DataFrame([
+        ("p1", "neighbourhood", "Centre Ville", cx, cy),
+        ("p2", "quarter", "Quartier Nord", cx, cy + 0.012),
+        ("p3", "suburb", "Banlieue Est", LON0 + SIZE_DEG - 0.004, cy),
+        ("p4", "suburb", "Banlieue Ouest", LON0 + 0.004, cy),
+    ], columns=["osm_id", "place", "name", "lon", "lat"]).assign(city=CITY)
+    lake.write("silver", "places", places, predicate=pred)
 
     # roads: a lattice every ~0.002° with shared node ids at intersections
     step, n = 0.002, int(SIZE_DEG / 0.002) + 1

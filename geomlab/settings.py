@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     llm_model: str = "claude-opus-5-5"
     ollama_url: str = "http://localhost:11434"
     ollama_model: str = "qwen3:8b"
+    ollama_num_ctx: int = 8192  # Ollama's default (4096) overflows after one tool result
+    ollama_think: bool = False  # qwen3 "thinking" multiplies CPU latency for little gain here
+    chat_timeout_s: int = 280  # whole agent loop; stays under the web proxy's 300 s
     embedding_backend: str = Field("sentence-transformers", description="sentence-transformers | ollama | hash")
     embedding_model: str = "BAAI/bge-m3"
     embedding_dim: int = 1024

@@ -5,11 +5,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf 
 WORKDIR /app
 RUN pip install torch --index-url https://download.pytorch.org/whl/cpu
 COPY pyproject.toml README.md ./
+# dependencies first (cached until pyproject.toml changes), then the code (fast to rebuild)
+RUN mkdir geomlab && touch geomlab/__init__.py && pip install ".[ingestion,ml,genai,api,dbt]" && rm -rf geomlab
 COPY geomlab ./geomlab
-RUN pip install ".[ingestion,ml,genai,api,dbt]"
+RUN pip install --no-deps --force-reinstall .
 COPY config ./config
 COPY dbt ./dbt
-RUN useradd -m -u 10001 geomlab && mkdir -p /app/data && chown -R geomlab /app/data
+# group 0 like the Airflow image, so both can write the shared /data volume (prepared by `init`)
+RUN useradd -m -u 10001 -g 0 geomlab && mkdir -p /app/data && chown -R geomlab:0 /app/data
 USER geomlab
 EXPOSE 8000
 CMD ["uvicorn", "geomlab.api.main:app", "--host", "0.0.0.0", "--port", "8000"]

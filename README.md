@@ -35,7 +35,7 @@ docker compose --env-file ../.env up -d --build
 | API (OpenAPI docs) | http://localhost:8000/docs |
 | Airflow | http://localhost:8081 |
 | MLflow | http://localhost:5000 |
-| RustFS console | http://localhost:9001 |
+| RustFS console | http://localhost:9001/rustfs/console/ |
 | MCP (streamable HTTP, bearer `MCP_AUTH_TOKEN`) | http://localhost:8765/mcp |
 
 Then in Airflow, unpause the DAGs. `ingest_boundaries` builds the grid; the ingestion DAGs
@@ -45,6 +45,20 @@ the first time (it is weekly afterwards), then `score_cells` runs automatically.
 Earth Engine needs a Google Cloud project with the Earth Engine API enabled
 (`EARTHENGINE_PROJECT`) and a service-account key in `secrets/key.json`. Without it the
 pipeline still runs; satellite features are null and every score is flagged low-confidence.
+
+### Assistant (LLM)
+
+| `LLM_PROVIDER` | Needs |
+|---|---|
+| `anthropic` | `ANTHROPIC_API_KEY` with credit |
+| `ollama` | the Ollama container: `docker compose --env-file ../.env --profile local-llm up -d ollama`, then `docker compose exec ollama ollama pull qwen3:8b` |
+
+The UI uses `POST /chat/stream` (NDJSON: tool steps, answer text as it is generated, then `done`).
+On CPU, a local 8B model takes 1–3 minutes per answer; `OLLAMA_MODEL=qwen3:4b` is faster.
+Tool results are compacted before they reach the model and Ollama runs with `OLLAMA_NUM_CTX=8192`
+and `OLLAMA_THINK=false`; `CHAT_TIMEOUT_S` caps one answer.
+
+Ports 8000/8080 taken by another stack: set `API_PORT` / `WEB_PORT` in `.env`.
 
 ## Local development (no Airflow)
 

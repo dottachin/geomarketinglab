@@ -22,8 +22,12 @@ CREATE TABLE IF NOT EXISTS serving.cells (
     geom       geometry(Geometry, 4326) NOT NULL,
     centroid   geometry(Point, 4326) NOT NULL
 );
+-- human place labels (silver.cell_names; config/naming.yaml), added later: upgrade in place
+ALTER TABLE serving.cells ADD COLUMN IF NOT EXISTS neighbourhood text;
+ALTER TABLE serving.cells ADD COLUMN IF NOT EXISTS landmark text;
 CREATE INDEX IF NOT EXISTS cells_city_idx ON serving.cells (city);
 CREATE INDEX IF NOT EXISTS cells_geom_idx ON serving.cells USING gist (geom);
+CREATE INDEX IF NOT EXISTS cells_centroid_idx ON serving.cells USING gist (centroid);
 
 CREATE TABLE IF NOT EXISTS serving.pois (
     city      text NOT NULL,

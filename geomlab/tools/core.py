@@ -91,6 +91,21 @@ def _records(df: pd.DataFrame) -> list[dict]:
     return [{k: _clean(v) for k, v in r.items()} for r in df.to_dict("records")]
 
 
+# Human-readable place names of a hexagon (OSM neighbourhood, nearby prominent named POI).
+# Nullable; selected only if the serving schema already has them, so the tools keep working
+# against a database that predates the columns (they then come back as null).
+CELL_LABELS = ("neighbourhood", "landmark")
+
+
+def _label_cols(con, alias: str = "c", cols: tuple[str, ...] = CELL_LABELS) -> str:
+    """SELECT fragment for the label columns of ``serving.cells`` (names from CELL_LABELS only)."""
+    present = {r[0] for r in con.execute(text("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_schema = 'serving' AND table_name = 'cells' AND column_name = ANY(:cols)"""),
+        {"cols": list(cols)})}
+    return ", ".join(f"{alias}.{c}" if c in present else f"NULL::text AS {c}" for c in cols)
+
+
 # ----------------------------------------------------------------------------- tools
 def recommend_locations(business_type: str, city: str, k: int = 10, district: str | None = None,
                         max_competitors: int | None = None, min_population: float | None = None,
@@ -101,8 +116,12 @@ def recommend_locations(business_type: str, city: str, k: int = 10, district: st
     active = _active()
     where = ["s.model_version = :mv", "s.city = :city", "s.business_type = :bt"]
     params: dict[str, Any] = {"mv": active["model_version"], "city": c, "bt": bt, "k": k}
-    if district:
-        where.append("c.district ILIKE :district")
+    with engine("ro").connect() as con:
+        labels = _label_cols(con)
+    has_neigh = labels.startswith("c.neighbourhood")
+    if district:  # matches the arrondissement or, when available, the OSM neighbourhood
+        where.append("(c.district ILIKE :district OR c.neighbourhood ILIKE :district)" if has_neigh
+                     else "c.district ILIKE :district")
         params["district"] = f"%{district}%"
     if max_competitors is not None:
         where.append("s.competitors_catchment <= :maxc")
@@ -115,7 +134,7 @@ def recommend_locations(business_type: str, city: str, k: int = 10, district: st
     if opportunity_only:
         where.append("s.opportunity")
     sql = f"""
-        SELECT s.h3_id, c.district, s.rank AS city_rank, s.final_score, s.suitability, s.saturation,
+        SELECT s.h3_id, c.district, {labels}, s.rank AS city_rank, s.final_score, s.suitability, s.saturation,
                s.n_existing, s.competitors_catchment, s.nearest_competitor_m, s.pop_catchment,
                s.opportunity, s.low_confidence, s.confidence_reasons,
                ST_X(c.centroid) AS lon, ST_Y(c.centroid) AS lat
@@ -126,13 +145,15 @@ def recommend_locations(business_type: str, city: str, k: int = 10, district: st
         df = pd.read_sql(text(sql), con, params=params)
     if district and df.empty:
         with engine("ro").connect() as con:
+            col = "unnest(ARRAY[district, neighbourhood])" if has_neigh else "district"
             names = [r[0] for r in con.execute(text(
-                "SELECT DISTINCT district FROM serving.cells WHERE city = :c AND district IS NOT NULL ORDER BY 1"),
-                {"c": c})]
+                f"SELECT DISTINCT n FROM (SELECT {col} AS n FROM serving.cells WHERE city = :c) t "
+                "WHERE n IS NOT NULL ORDER BY 1"), {"c": c})]
         raise ToolInputError(f"no scored cells match district '{district}' in {c}", "district", names)
     df.insert(0, "rank", range(1, len(df) + 1))
     for col in ("final_score", "suitability", "saturation"):
         df[col] = df[col].round(3)
+    df["top_reasons"] = _top_reasons(list(df["h3_id"]), bt, active["model_version"]) if len(df) else []
     return {
         "evidence": "model",
         "business_type": bt, "city": c, "filters": {k_: v for k_, v in params.items() if k_ not in ("mv", "city", "bt", "k")},
@@ -145,6 +166,22 @@ def recommend_locations(business_type: str, city: str, k: int = 10, district: st
     }
 
 
+def _top_reasons(h3_ids: list[str], bt: str, mv: str, n: int = 3) -> list[list[str]]:
+    """The n strongest positive SHAP drivers of each cell, as readable labels, so a ranked list
+    can be justified without one explain_location call per result."""
+    with engine("ro").connect() as con:
+        rows = con.execute(text("""
+            SELECT h3_id, feature FROM serving.shap_drivers
+            WHERE h3_id = ANY(:ids) AND business_type = :bt AND model_version = :mv AND shap > 0
+            ORDER BY h3_id, rank"""), {"ids": h3_ids, "bt": bt, "mv": mv}).all()
+    by_cell: dict[str, list[str]] = {}
+    for h, feature in rows:
+        labels = by_cell.setdefault(h, [])
+        if len(labels) < n:
+            labels.append(describe(feature).description)
+    return [by_cell.get(h, []) for h in h3_ids]
+
+
 def explain_location(h3_id: str, business_type: str) -> dict:
     """Score, SHAP drivers, raw statistics, nearby competitors and neighbouring cells."""
     cell, bt = _h3(h3_id), _business(business_type)
@@ -152,8 +189,12 @@ def explain_location(h3_id: str, business_type: str) -> dict:
     mv = active["model_version"]
     catchment = get_business_type(bt).catchment_m
     with engine("ro").connect() as con:
-        score = con.execute(text("""
-            SELECT s.*, c.district, ST_X(c.centroid) AS lon, ST_Y(c.centroid) AS lat
+        labels = _label_cols(con)
+        score = con.execute(text(f"""
+            SELECT s.*, c.district, {labels}, ST_X(c.centroid) AS lon, ST_Y(c.centroid) AS lat,
+                   (SELECT count(*) FROM serving.scores n
+                    WHERE n.model_version = s.model_version AND n.city = s.city
+                      AND n.business_type = s.business_type) AS n_cells
             FROM serving.scores s JOIN serving.cells c ON c.h3_id = s.h3_id
             WHERE s.h3_id = :h AND s.business_type = :bt AND s.model_version = :mv"""),
             {"h": cell, "bt": bt, "mv": mv}).mappings().first()
@@ -168,8 +209,8 @@ def explain_location(h3_id: str, business_type: str) -> dict:
             WHERE c.h3_id = :h AND p.city = c.city AND p.category = :bt
               AND ST_DWithin(p.geom::geography, c.centroid::geography, :r)
             ORDER BY distance_m LIMIT 10"""), con, params={"h": cell, "bt": bt, "r": catchment})
-        neigh = pd.read_sql(text("""
-            SELECT s.h3_id, round(s.final_score::numeric, 3) AS final_score, s.rank AS city_rank, s.n_existing
+        neigh = pd.read_sql(text(f"""
+            SELECT s.h3_id, {_label_cols(con, cols=("neighbourhood",))}, round(s.final_score::numeric, 3) AS final_score, s.rank AS city_rank, s.n_existing
             FROM serving.scores s JOIN serving.cells c ON c.h3_id = s.h3_id
             JOIN serving.cells me ON me.h3_id = :h
             WHERE s.business_type = :bt AND s.model_version = :mv AND s.h3_id <> :h
@@ -196,9 +237,10 @@ def explain_location(h3_id: str, business_type: str) -> dict:
     return {
         "evidence": "model",
         "h3_id": cell, "business_type": bt, "city": score["city"], "district": score["district"],
+        "neighbourhood": score["neighbourhood"], "landmark": score["landmark"],
         "centroid": {"lon": score["lon"], "lat": score["lat"]},
         "final_score": round(score["final_score"], 3), "suitability": round(score["suitability"], 3),
-        "saturation": round(score["saturation"], 3), "city_rank": score["rank"],
+        "saturation": round(score["saturation"], 3), "city_rank": score["rank"], "n_cells": int(score["n_cells"]),
         "percentile": round(score["percentile"], 3), "opportunity": score["opportunity"],
         "existing_in_cell": score["n_existing"], "competitors_in_catchment": score["competitors_catchment"],
         "catchment_m": catchment, "population_in_catchment": _clean(score["pop_catchment"]),
@@ -294,6 +336,38 @@ def simulate_location(h3_id: str, business_type: str, changes: dict[str, float])
 # ----------------------------------------------------------------------------- resources
 def list_cities() -> list[dict]:
     return [{"slug": s, "name": c.display_name, "h3_resolution": c.h3_resolution} for s, c in cities().items()]
+
+
+def map_cells(city: str, business_type: str) -> dict:
+    """All scored hexagons of a city for one business type (deck.gl H3HexagonLayer input) and
+    the existing businesses of that type."""
+    c, bt = _city(city), _business(business_type)
+    active = _active()
+    with engine("ro").connect() as con:
+        rows = con.execute(text(f"""
+            SELECT s.h3_id, c.district, {_label_cols(con)}, round(s.final_score::numeric, 4) AS final_score,
+                   round(s.suitability::numeric, 4) AS suitability, round(s.saturation::numeric, 4) AS saturation,
+                   s.rank, s.n_existing, s.competitors_catchment, round(s.pop_catchment::numeric) AS pop_catchment,
+                   s.opportunity, s.low_confidence
+            FROM serving.scores s JOIN serving.cells c ON c.h3_id = s.h3_id
+            WHERE s.model_version = :mv AND s.city = :c AND s.business_type = :bt ORDER BY s.rank"""),
+            {"mv": active["model_version"], "c": c, "bt": bt}).mappings().all()
+        comps = con.execute(text("""SELECT name, ST_X(geom) AS lon, ST_Y(geom) AS lat FROM serving.pois
+            WHERE city = :c AND category = :bt"""), {"c": c, "bt": bt}).mappings().all()
+    return {"city": c, "business_type": bt, "model_version": active["model_version"], "data_date": active["data_date"],
+            "cells": [{k: (float(v) if hasattr(v, "is_finite") else v) for k, v in r.items()} for r in rows],
+            "competitors": [dict(r) for r in comps]}
+
+
+def list_pois(city: str) -> list[dict]:
+    """Every point of interest of a city (existing businesses and attractors) for the map."""
+    c = _city(city)
+    with engine("ro").connect() as con:
+        rows = con.execute(text("""
+            SELECT name, role, category, round(ST_X(geom)::numeric, 6)::float AS lon,
+                   round(ST_Y(geom)::numeric, 6)::float AS lat
+            FROM serving.pois WHERE city = :c"""), {"c": c}).mappings().all()
+    return [dict(r) for r in rows]
 
 
 def list_business_types() -> list[dict]:

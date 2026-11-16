@@ -17,7 +17,7 @@ def test_full_pipeline(env):
     (env / "config/model.yaml").write_text(yaml.safe_dump(mc))
     _reset_caches()
 
-    from geomlab.features import build, families
+    from geomlab.features import build, families, naming
     from geomlab.lakehouse import get_lake
     from geomlab.ml import scoring, train
     from geomlab.quality import checks
@@ -27,6 +27,9 @@ def test_full_pipeline(env):
     build.ensure_gee(synthetic.CITY, lake)
     build.ensure_hcp(synthetic.CITY, lake)
     families.run(synthetic.CITY, lake)
+    assert naming.run(synthetic.CITY, lake) == len(lake.read("silver", "grid"))
+    names = lake.read("silver", "cell_names")
+    assert names["neighbourhood"].notna().mean() > 0.5 and names["landmark"].notna().any()
     build.run_dbt("build")
     feats = build.read_warehouse("gold_cell_features")
     assert not [c for c in feats.columns if c.startswith("comp_")]

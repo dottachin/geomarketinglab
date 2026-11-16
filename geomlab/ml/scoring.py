@@ -122,7 +122,8 @@ def run(lake: Lake | None = None, publish_db: bool = True) -> dict:
 
         grid = lake.read_geo("silver", "grid")
         db.init_schema()
-        db.load_cells(grid)
+        names = lake.read("silver", "cell_names") if lake.exists("silver", "cell_names") else None
+        db.load_cells(grid, names)
         poi = lake.read_geo("silver", "poi")
         for city in poi["city"].unique():
             db.load_pois(poi[poi["city"] == city], city)

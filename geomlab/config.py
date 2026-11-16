@@ -151,6 +151,21 @@ def model_config() -> dict[str, Any]:
 
 
 @lru_cache(maxsize=1)
+def naming_config() -> dict[str, Any]:
+    """Cell naming (config/naming.yaml): place types, neighbourhood tiers, landmark scoring."""
+    raw = _read_yaml("naming.yaml")
+    tiers = [{"places": [str(p) for p in t["places"]], "radius_m": float(t["radius_m"])}
+             for t in (raw.get("neighbourhood") or {}).get("tiers") or []]
+    lm = raw.get("landmark") or {}
+    return {
+        "place_types": [str(p) for p in raw.get("place_types") or ["neighbourhood", "quarter", "suburb"]],
+        "tiers": tiers,
+        "landmark_radius_m": float(lm.get("radius_m", 400)),
+        "landmark_bonus_m": {str(k): float(v) for k, v in (lm.get("bonus_m") or {}).items()},
+    }
+
+
+@lru_cache(maxsize=1)
 def hcp_config() -> dict[str, Any]:
     return _read_yaml("hcp.yaml")
 

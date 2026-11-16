@@ -12,10 +12,18 @@ class ChatTurn(BaseModel):
     content: str = Field(max_length=8000)
 
 
+class ChatContext(BaseModel):
+    """What the user has selected in the UI (sent along so 'here' / 'this hexagon' resolve)."""
+    city: str | None = Field(None, max_length=64)
+    business_type: str | None = Field(None, max_length=64)
+    h3_id: str | None = Field(None, max_length=32)
+
+
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
     history: list[ChatTurn] = Field(default_factory=list, max_length=20)
     provider: Literal["anthropic", "ollama"] | None = None
+    context: ChatContext | None = None
 
 
 class SearchRequest(BaseModel):

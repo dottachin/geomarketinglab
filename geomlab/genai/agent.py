@@ -7,11 +7,20 @@ for demo"):
 
 The loop is written by hand (not the SDK's beta tool runner) because the same loop must
 drive both providers and collect citations from tool outputs.
+
+Progress events (``on_event``) let the API stream the run to the UI:
+  {"type": "tool", "name", "args"}            a tool is being called
+  {"type": "tool_result", "name", "is_error"} it returned
+  {"type": "delta", "text"}                    answer text as it is generated
+  {"type": "reset"}                            discard streamed text (the model went on calling tools)
 """
 
 from __future__ import annotations
 
 import json
+import re
+import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -24,6 +33,12 @@ from geomlab.tools import registry
 
 log = get_logger(__name__)
 MAX_STEPS = 8
+Emit = Callable[[dict], None]
+_THINK = re.compile(r"<think>.*?</think>\s*", re.S)
+
+
+def _noop(_: dict) -> None:
+    pass
 
 
 @dataclass
@@ -68,11 +83,19 @@ class AgentAnswer:
                 "tool_calls": [{"name": t.name, "args": t.args, "is_error": t.is_error} for t in self.tool_calls]}
 
 
-def _run_tool(name: str, args: dict, trace: list[ToolTrace]) -> tuple[str, bool]:
+def _run_tool(name: str, args: dict, trace: list[ToolTrace], emit: Emit) -> tuple[str, bool]:
+    emit({"type": "tool", "name": name, "args": args})
     payload, is_error = registry.call(name, args)
     trace.append(ToolTrace(name, args, is_error, payload))
     log.info("tool_call name=%s error=%s", name, is_error)
-    return registry.to_json(payload), is_error
+    emit({"type": "tool_result", "name": name, "is_error": is_error})
+    return registry.to_llm_json(payload), is_error
+
+
+def _out_of_time(trace: list[ToolTrace], model: str) -> AgentAnswer:
+    done = ", ".join(sorted({t.name for t in trace})) or "none"
+    return AgentAnswer("The assistant ran out of time before finishing its answer (tools already run: "
+                       f"{done}). Try a more specific question, or a faster model.", trace, model, "timeout")
 
 
 # ----------------------------------------------------------------------------- Claude
@@ -83,12 +106,15 @@ class AnthropicProvider:
         self.client = anthropic.Anthropic()
         self.model = model or get_settings().llm_model
 
-    def run(self, history: list[dict], tools: list[dict]) -> AgentAnswer:
+    def run(self, history: list[dict], tools: list[dict], emit: Emit = _noop) -> AgentAnswer:
         trace: list[ToolTrace] = []
         messages: list[dict[str, Any]] = [{"role": m["role"], "content": m["content"]} for m in history]
         tool_defs = tools  # inputs are validated by the tool functions themselves
+        deadline = time.monotonic() + get_settings().chat_timeout_s
         stop = ""
         for _ in range(MAX_STEPS):
+            if time.monotonic() > deadline:
+                return _out_of_time(trace, self.model)
             resp = self.client.beta.messages.create(
                 model=self.model,
                 max_tokens=16000,
@@ -110,36 +136,80 @@ class AnthropicProvider:
             calls = [b for b in resp.content if b.type == "tool_use"]
             if stop != "tool_use" or not calls:
                 text = "".join(b.text for b in resp.content if b.type == "text")
+                emit({"type": "delta", "text": text})
                 return AgentAnswer(text, trace, resp.model, stop)
             results = []
             for b in calls:  # all results go back in ONE user message
-                out, err = _run_tool(b.name, dict(b.input), trace)
+                out, err = _run_tool(b.name, dict(b.input), trace, emit)
                 results.append({"type": "tool_result", "tool_use_id": b.id, "content": out, "is_error": err})
             messages.append({"role": "user", "content": results})
         return AgentAnswer("I could not finish within the allowed number of steps.", trace, self.model, stop)
 
 
 # ----------------------------------------------------------------------------- Ollama
+class OllamaError(RuntimeError):
+    """Ollama answered with an error (model not pulled, out of memory…)."""
+
+
 class OllamaProvider:
     def __init__(self, model: str | None = None):
         s = get_settings()
         self.url, self.model = s.ollama_url.rstrip("/"), model or s.ollama_model
+        self.num_ctx, self.think, self.budget = s.ollama_num_ctx, s.ollama_think, s.chat_timeout_s
 
-    def run(self, history: list[dict], tools: list[dict]) -> AgentAnswer:
+    def _chat(self, messages: list[dict], tools: list[dict], emit: Emit, deadline: float) -> dict:
+        """One streamed /api/chat call; returns the assembled assistant message."""
+        body = {"model": self.model, "messages": messages, "tools": tools, "stream": True, "think": self.think,
+                "keep_alive": "30m", "options": {"temperature": 0.1, "num_ctx": self.num_ctx}}
+        content: list[str] = []
+        calls: list[dict] = []
+        timeout = httpx.Timeout(connect=10, read=max(5.0, deadline - time.monotonic()), write=30, pool=10)
+        with httpx.stream("POST", f"{self.url}/api/chat", json=body, timeout=timeout) as r:
+            if r.status_code >= 400:
+                r.read()
+                try:
+                    detail = r.json().get("error", r.text)
+                except ValueError:
+                    detail = r.text
+                raise OllamaError(f"Ollama returned {r.status_code}: {detail}")
+            for line in r.iter_lines():
+                if time.monotonic() > deadline:
+                    raise TimeoutError("chat time budget exceeded")
+                if not line.strip():
+                    continue
+                chunk = json.loads(line)
+                if chunk.get("error"):
+                    raise OllamaError(chunk["error"])
+                msg = chunk.get("message") or {}
+                if msg.get("content"):
+                    content.append(msg["content"])
+                    emit({"type": "delta", "text": msg["content"]})
+                calls += msg.get("tool_calls") or []
+                if chunk.get("done"):
+                    break
+        out: dict[str, Any] = {"role": "assistant", "content": "".join(content)}
+        if calls:
+            out["tool_calls"] = calls
+        return out
+
+    def run(self, history: list[dict], tools: list[dict], emit: Emit = _noop) -> AgentAnswer:
         trace: list[ToolTrace] = []
         fn_tools = [{"type": "function", "function": {"name": t["name"], "description": t["description"],
                                                       "parameters": t["input_schema"]}} for t in tools]
         messages = [{"role": "system", "content": system_prompt()}] + [
             {"role": m["role"], "content": m["content"]} for m in history]
+        deadline = time.monotonic() + self.budget
         for _ in range(MAX_STEPS):
-            r = httpx.post(f"{self.url}/api/chat", json={"model": self.model, "messages": messages, "tools": fn_tools,
-                                                         "stream": False, "options": {"temperature": 0.1}}, timeout=600)
-            r.raise_for_status()
-            msg = r.json()["message"]
+            try:
+                msg = self._chat(messages, fn_tools, emit, deadline)
+            except (TimeoutError, httpx.ReadTimeout):
+                return _out_of_time(trace, self.model)
             messages.append(msg)
             calls = msg.get("tool_calls") or []
             if not calls:
-                return AgentAnswer(msg.get("content", ""), trace, self.model, "end_turn")
+                return AgentAnswer(_THINK.sub("", msg["content"]).strip(), trace, self.model, "end_turn")
+            if msg["content"]:
+                emit({"type": "reset"})
             for c in calls:
                 fn = c["function"]
                 args = fn.get("arguments") or {}
@@ -148,7 +218,7 @@ class OllamaProvider:
                         args = json.loads(args)
                     except json.JSONDecodeError:
                         args = {}
-                out, _ = _run_tool(fn["name"], args, trace)
+                out, _ = _run_tool(fn["name"], args, trace, emit)
                 messages.append({"role": "tool", "content": out, "tool_name": fn["name"]})
         return AgentAnswer("I could not finish within the allowed number of steps.", trace, self.model, "max_steps")
 
@@ -158,8 +228,16 @@ def get_provider(name: str | None = None):
     return OllamaProvider() if name == "ollama" else AnthropicProvider()
 
 
+def with_context(question: str, context: dict | None) -> str:
+    """Prefix what the user is looking at in the UI, so 'here' / 'this hexagon' resolve."""
+    labels = {"city": "city", "business_type": "business type", "h3_id": "selected hexagon"}
+    parts = [f"{labels[k]} = {v}" for k, v in (context or {}).items() if k in labels and v]
+    return f"[UI context: {', '.join(parts)}]\n{question}" if parts else question
+
+
 def ask(question: str, history: list[dict] | None = None, provider: str | None = None,
-        enabled_tools: list[str] | None = None) -> AgentAnswer:
+        enabled_tools: list[str] | None = None, context: dict | None = None,
+        on_event: Emit | None = None) -> AgentAnswer:
     """``history`` is a list of {role: user|assistant, content: str} from previous turns."""
-    msgs = list(history or []) + [{"role": "user", "content": question}]
-    return get_provider(provider).run(msgs, registry.tool_schemas(enabled_tools))
+    msgs = list(history or []) + [{"role": "user", "content": with_context(question, context)}]
+    return get_provider(provider).run(msgs, registry.tool_schemas(enabled_tools), on_event or _noop)

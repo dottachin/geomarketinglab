@@ -54,6 +54,28 @@ def count_within_m(
     return joined.groupby(level=0)["_w"].sum().reindex(centers.index).fillna(0.0)
 
 
+def pairs_within_m(
+    sources: gpd.GeoDataFrame, targets: gpd.GeoDataFrame, radius_m: float, epsg: int
+) -> pd.DataFrame:
+    """Every (source, target) pair closer than ``radius_m``: columns ``source`` / ``target``
+    (index labels of the inputs) and ``distance_m``, measured in ``epsg``."""
+    cols = {"source": pd.Series(dtype=object), "target": pd.Series(dtype=object),
+            "distance_m": pd.Series(dtype="float64")}
+    if len(targets) == 0 or len(sources) == 0:
+        return pd.DataFrame(cols)
+    src = sources.to_crs(epsg=epsg)[["geometry"]]
+    tgt = targets.to_crs(epsg=epsg)[["geometry"]]
+    buf = src.assign(geometry=src.geometry.buffer(radius_m))
+    joined = gpd.sjoin(buf, tgt, how="inner", predicate="intersects")
+    if joined.empty:
+        return pd.DataFrame(cols)
+    s_idx = joined.index.to_numpy()
+    t_idx = joined["index_right"].to_numpy()
+    d = src.geometry.loc[s_idx].distance(tgt.geometry.loc[t_idx], align=False).to_numpy()
+    out = pd.DataFrame({"source": s_idx, "target": t_idx, "distance_m": d})
+    return out[out["distance_m"] <= radius_m].reset_index(drop=True)
+
+
 # --- H3 --------------------------------------------------------------------------
 def _to_latlngpoly(poly: Polygon) -> h3.LatLngPoly:
     outer = [(lat, lon) for lon, lat in poly.exterior.coords]

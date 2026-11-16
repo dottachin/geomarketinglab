@@ -74,6 +74,9 @@ geomlab-mcp = "geomlab.mcp_server:main"
 [tool.setuptools.packages.find]
 include = ["geomlab*"]
 
+[tool.setuptools.package-data]
+geomlab = ["serving/*.sql"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"

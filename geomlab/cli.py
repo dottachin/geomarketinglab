@@ -1,7 +1,7 @@
 """Command line: every pipeline step, runnable without Airflow (the DAGs call the same functions).
 
   geomlab ingest boundaries|osm|gee|hcp [--city C]
-  geomlab silver grid|osm|hcp-units|cells [--city C]
+  geomlab silver grid|osm|hcp-units|names|cells [--city C]
   geomlab features [--city C]            silver → dbt build → quality gate → publish gold
   geomlab train [--families lightgbm,mlp,gnn]
   geomlab score
@@ -38,7 +38,7 @@ def cmd_ingest(a) -> dict:
 
 
 def cmd_silver(a) -> dict:
-    from geomlab.features import build, grid, hcp_silver, osm_silver
+    from geomlab.features import build, grid, hcp_silver, naming, osm_silver
 
     if a.step == "grid":
         return {c: grid.run(c) for c in _cities(a.city)}
@@ -46,6 +46,8 @@ def cmd_silver(a) -> dict:
         return osm_silver.run(_cities(a.city))
     if a.step == "hcp-units":
         return {"version": hcp_silver.run_units()}
+    if a.step == "names":
+        return {c: naming.run(c) for c in _cities(a.city)}
     for c in _cities(a.city):
         build.build_silver(c)
     return {"cities": _cities(a.city)}
@@ -159,7 +161,7 @@ def main(argv: list[str] | None = None) -> None:
     s.add_argument("--force", action="store_true")
     s.set_defaults(fn=cmd_ingest)
     s = sub.add_parser("silver")
-    s.add_argument("step", choices=["grid", "osm", "hcp-units", "cells"])
+    s.add_argument("step", choices=["grid", "osm", "hcp-units", "names", "cells"])
     s.add_argument("--city")
     s.set_defaults(fn=cmd_silver)
     s = sub.add_parser("features")

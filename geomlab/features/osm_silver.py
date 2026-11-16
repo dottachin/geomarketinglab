@@ -3,8 +3,10 @@
 One pass over the PBF produces, for every configured city (filtered by bbox, then by
 boundary polygon):
 
-  silver.poi         city, osm_id, role, category, name, lon, lat, h3_id
+  silver.poi         city, osm_id, role, category, name, name_en, name_fr, lon, lat, h3_id
                      (categories from config/poi_categories.yaml, normalised, deduplicated)
+  silver.places      city, osm_id, place, name, lon, lat  (named place=* nodes from
+                     config/naming.yaml; ``name`` cleaned to a display-ready Latin string)
   silver.roads       city, osm_id, highway, road_class, node_refs, geometry (LineString)
   silver.road_nodes  city, node_id, street_count, lon, lat, h3_id  (street_count ≥ 3 → junction)
   silver.landuse     city, landuse_class, geometry (Polygon)
@@ -23,7 +25,8 @@ import pandas as pd
 from shapely.geometry import LineString, Polygon
 
 from geomlab import geo
-from geomlab.config import PoiTaxonomy, cities, poi_taxonomy
+from geomlab.config import PoiTaxonomy, cities, naming_config, poi_taxonomy
+from geomlab.features.naming import clean_name
 from geomlab.ingestion import osm as osm_ingest
 from geomlab.lakehouse import Lake, get_lake
 from geomlab.logging import get_logger
@@ -48,6 +51,7 @@ LANDUSE_CLASS = {
 @dataclass
 class _Acc:
     pois: list = field(default_factory=list)
+    places: list = field(default_factory=list)
     roads: list = field(default_factory=list)
     landuse: list = field(default_factory=list)
     buildings: list = field(default_factory=list)
@@ -55,7 +59,8 @@ class _Acc:
     node_xy: dict = field(default_factory=dict)
 
 
-def _make_handler(bboxes: dict[str, tuple[float, float, float, float]], taxonomy: PoiTaxonomy):
+def _make_handler(bboxes: dict[str, tuple[float, float, float, float]], taxonomy: PoiTaxonomy,
+                  place_types: frozenset[str] = frozenset()):
     import osmium
 
     keys = taxonomy.keys | {"highway", "building", "landuse", "leisure"}
@@ -72,7 +77,10 @@ def _make_handler(bboxes: dict[str, tuple[float, float, float, float]], taxonomy
             self.acc = {slug: _Acc() for slug in bboxes}
 
         def node(self, n):
-            if not n.tags or not any(k in n.tags for k in taxonomy.keys):
+            if not n.tags:
+                return
+            is_place = n.tags.get("place") in place_types and "name" in n.tags
+            if not is_place and not any(k in n.tags for k in taxonomy.keys):
                 return
             loc = n.location
             if not loc.valid():
@@ -81,9 +89,12 @@ def _make_handler(bboxes: dict[str, tuple[float, float, float, float]], taxonomy
             if slug is None:
                 return
             tags = {t.k: t.v for t in n.tags}
+            if is_place:
+                name = clean_name(tags["name"], tags.get("name:en"), tags.get("name:fr"))
+                self.acc[slug].places.append((f"n{n.id}", tags["place"], name, loc.lon, loc.lat))
             hit = taxonomy.classify(tags)
             if hit:
-                self.acc[slug].pois.append((f"n{n.id}", *hit, tags.get("name"), loc.lon, loc.lat))
+                self.acc[slug].pois.append((f"n{n.id}", *hit, *_names(tags), loc.lon, loc.lat))
 
         def way(self, w):
             if not any(k in w.tags for k in keys):
@@ -121,9 +132,13 @@ def _make_handler(bboxes: dict[str, tuple[float, float, float, float]], taxonomy
             hit = taxonomy.classify(tags)
             if hit:
                 arr = np.asarray(coords)
-                acc.pois.append((f"w{w.id}", *hit, tags.get("name"), float(arr[:, 0].mean()), float(arr[:, 1].mean())))
+                acc.pois.append((f"w{w.id}", *hit, *_names(tags), float(arr[:, 0].mean()), float(arr[:, 1].mean())))
 
     return Handler()
+
+
+def _names(tags: dict[str, str]) -> tuple[str | None, str | None, str | None]:
+    return tags.get("name"), tags.get("name:en"), tags.get("name:fr")
 
 
 def _within(gdf: gpd.GeoDataFrame, boundary) -> gpd.GeoDataFrame:
@@ -148,7 +163,7 @@ def run(city_slugs: list[str] | None = None, lake: Lake | None = None) -> dict[s
         boundary_geom[slug] = g
         bboxes[slug] = g.bounds  # (minx, miny, maxx, maxy) = (w, s, e, n)
 
-    handler = _make_handler(bboxes, poi_taxonomy())
+    handler = _make_handler(bboxes, poi_taxonomy(), frozenset(naming_config()["place_types"]))
     handler.apply_file(str(pbf), locations=True, idx="flex_mem")
 
     counts = {}
@@ -156,7 +171,8 @@ def run(city_slugs: list[str] | None = None, lake: Lake | None = None) -> dict[s
         acc, city, b = handler.acc[slug], cities()[slug], boundary_geom[slug]
         pred = f"city = '{slug}'"
 
-        poi = pd.DataFrame(acc.pois, columns=["osm_id", "role", "category", "name", "lon", "lat"])
+        poi = pd.DataFrame(acc.pois, columns=["osm_id", "role", "category", "name", "name_en", "name_fr", "lon", "lat"])
+        poi = poi.astype({"name": "string", "name_en": "string", "name_fr": "string"})
         poi = gpd.GeoDataFrame(poi, geometry=gpd.points_from_xy(poi.lon, poi.lat), crs=geo.WGS84)
         poi = _within(poi, b).drop_duplicates("osm_id")
         # Same shop mapped as node + building outline: drop same-category duplicates < 15 m apart.
@@ -164,6 +180,13 @@ def run(city_slugs: list[str] | None = None, lake: Lake | None = None) -> dict[s
         poi["h3_id"] = geo.points_to_cells(poi["lon"].to_numpy(), poi["lat"].to_numpy(), city.h3_resolution)
         poi["city"] = slug
         lake.write("silver", "poi", poi, predicate=pred)
+
+        places = pd.DataFrame(acc.places, columns=["osm_id", "place", "name", "lon", "lat"])
+        places = places.astype({"osm_id": "string", "place": "string", "name": "string",
+                                "lon": "float64", "lat": "float64"})
+        pts = gpd.points_from_xy(places["lon"], places["lat"], crs=geo.WGS84)
+        places = places[pts.intersects(b)].drop_duplicates("osm_id").assign(city=slug)
+        lake.write("silver", "places", places, predicate=pred)
 
         roads = pd.DataFrame(acc.roads, columns=["osm_id", "highway", "road_class", "node_refs", "wkb"])
         roads = gpd.GeoDataFrame(roads.drop(columns="wkb"), geometry=from_wkb(roads["wkb"].to_numpy()), crs=geo.WGS84)
@@ -194,8 +217,8 @@ def run(city_slugs: list[str] | None = None, lake: Lake | None = None) -> dict[s
         lake.write("silver", "buildings", bdf, predicate=pred)
 
         counts[slug] = len(poi)
-        log.info("osm_silver city=%s pois=%d roads=%d junctions=%d landuse=%d buildings=%d", slug,
-                 len(poi), len(roads), int((nodes.street_count >= 3).sum()), len(lu), len(bdf))
+        log.info("osm_silver city=%s pois=%d places=%d roads=%d junctions=%d landuse=%d buildings=%d", slug,
+                 len(poi), len(places), len(roads), int((nodes.street_count >= 3).sum()), len(lu), len(bdf))
     return counts
 
 

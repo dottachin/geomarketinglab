@@ -33,9 +33,12 @@ x-geomlab-env: &geomlab-env
   LLM_MODEL: ${LLM_MODEL:-claude-opus-5-5}
   OLLAMA_URL: http://ollama:11434
   OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:8b}
+  OLLAMA_NUM_CTX: ${OLLAMA_NUM_CTX:-8192}
+  OLLAMA_THINK: ${OLLAMA_THINK:-false}
+  CHAT_TIMEOUT_S: ${CHAT_TIMEOUT_S:-280}
   EMBEDDING_BACKEND: ${EMBEDDING_BACKEND:-sentence-transformers}
   EMBEDDING_MODEL: ${EMBEDDING_MODEL:-BAAI/bge-m3}
-  HF_HOME: /data/hf
+  HF_HOME: /data/hf-api
   API_KEYS: ${API_KEYS:-}
   MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN:-}
   SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
@@ -48,6 +51,10 @@ x-airflow: &airflow
     CONFIG_DIR: /opt/geomlab/config
     CORPUS_DIR: /opt/geomlab/corpus
     DBT_DIR: /opt/geomlab/dbt
+    # dbt writes logs and compiled artifacts here, not into the (read-only) project mount
+    DBT_LOG_PATH: /data/dbt/logs
+    DBT_TARGET_PATH: /data/dbt/target
+    HF_HOME: /data/hf-airflow
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
@@ -58,16 +65,19 @@ x-airflow: &airflow
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/airflow
     AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: admin:admin
     AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE: /opt/airflow/simple_auth_passwords.json
+  # read access to the GEE key (mode 640, group = HOST_GID) without making it world-readable
+  group_add: ["${HOST_GID:-1000}"]
   volumes:
     - ../airflow/dags:/opt/airflow/dags:ro
     - ../config:/opt/geomlab/config:ro
-    - ../dbt:/opt/geomlab/dbt
+    - ../dbt:/opt/geomlab/dbt:ro
     - ../corpus:/opt/geomlab/corpus:ro
     - geomlab-data:/data
     - ${GEE_KEY_DIR:-./secrets}:/run/secrets/gee:ro
   depends_on:
     postgres: {condition: service_healthy}
     rustfs: {condition: service_healthy}
+    init: {condition: service_completed_successfully}
 
 services:
   postgres:
@@ -114,7 +124,9 @@ services:
     build: {context: .., dockerfile: infra/docker/geomlab.Dockerfile}
     image: geomlab-python:local
     environment: *geomlab-env
-    command: ["sh", "-c", "geomlab lake-init && geomlab db-init"]
+    user: "0:0"   # one-shot: prepares the shared volume for airflow (uid 50000) and geomlab (uid 10001), both gid 0
+    volumes: [geomlab-data:/data]
+    command: ["sh", "-c", "mkdir -p /data/cache /data/hf-api /data/hf-airflow && chown -R 50000:0 /data && chmod -R g+rwX /data && chmod g+s /data && geomlab lake-init && geomlab db-init"]
     depends_on:
       postgres: {condition: service_healthy}
       rustfs: {condition: service_healthy}
@@ -171,7 +183,7 @@ services:
     volumes:
       - geomlab-data:/data
       - ../corpus:/app/corpus:ro
-    ports: ["8000:8000"]
+    ports: ["${API_PORT:-8000}:8000"]
     depends_on:
       init: {condition: service_completed_successfully}
     healthcheck:
@@ -200,7 +212,7 @@ services:
   web:
     build: {context: ../web}
     image: geomlab-web:local
-    ports: ["8080:80"]
+    ports: ["${WEB_PORT:-8080}:80"]
     depends_on: [api, martin]
 
   ollama:

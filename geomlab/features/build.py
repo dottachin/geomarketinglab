@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 
 from geomlab.config import hcp_config, model_config
-from geomlab.features import dictionary, families, gee_silver, hcp_silver
+from geomlab.features import dictionary, families, gee_silver, hcp_silver, naming
 from geomlab.lakehouse import Lake, get_lake
 from geomlab.logging import get_logger
 from geomlab.settings import get_settings
@@ -68,6 +68,10 @@ def build_silver(city: str, lake: Lake | None = None) -> None:
         log.error("hcp_cells_failed city=%s error=%s", city, exc)
     ensure_hcp(city, lake)
     families.run(city, lake)
+    try:
+        naming.run(city, lake)
+    except Exception as exc:  # UI labels only: a failure must not block the feature build
+        log.error("cell_names_failed city=%s error=%s", city, exc)
 
 
 # ----------------------------------------------------------------------------- dbt

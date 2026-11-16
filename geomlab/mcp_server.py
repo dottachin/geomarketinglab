@@ -37,7 +37,9 @@ def recommend_locations(business_type: str, city: str, k: int = 10, district: st
                         max_competitors: int | None = None, min_population: float | None = None,
                         exclude_low_confidence: bool = False, opportunity_only: bool = False) -> dict:
     """Top-k H3 cells to open this business type in a city (deep learning model scores,
-    adjusted by a competition-saturation penalty). Stamped with model_version and data_date."""
+    adjusted by a competition-saturation penalty). Each result names its place (district,
+    neighbourhood, nearby landmark); ``district`` filters on the arrondissement or neighbourhood.
+    Stamped with model_version and data_date."""
     return _safe(core.recommend_locations, business_type=business_type, city=city, k=k, district=district,
                  max_competitors=max_competitors, min_population=min_population,
                  exclude_low_confidence=exclude_low_confidence, opportunity_only=opportunity_only)
@@ -45,7 +47,8 @@ def recommend_locations(business_type: str, city: str, k: int = 10, district: st
 
 @mcp.tool()
 def explain_location(h3_id: str, business_type: str) -> dict:
-    """Score, SHAP drivers, key statistics, nearby competitors and neighbouring cells for one H3 cell."""
+    """Score, city rank out of n_cells, place names (district, neighbourhood, landmark), SHAP drivers,
+    key statistics, nearby competitors and neighbouring cells for one H3 cell."""
     return _safe(core.explain_location, h3_id=h3_id, business_type=business_type)
 
 

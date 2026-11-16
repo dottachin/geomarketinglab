@@ -8,20 +8,28 @@ read-only DB roles inside the tools, CORS restricted to the web origins.
 
 from __future__ import annotations
 
+import json
+import os
+import queue
+import threading
 from typing import Annotated
 
+import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from sqlalchemy import text
 
 from geomlab.api.schemas import ChatRequest, SearchRequest, SimulateRequest, StatsRequest
+from geomlab.logging import get_logger
 from geomlab.serving.db import engine
 from geomlab.settings import get_settings
 from geomlab.tools import core
+
+log = get_logger(__name__)
 
 settings = get_settings()
 limiter = Limiter(key_func=get_remote_address, default_limits=[settings.rate_limit])
@@ -86,23 +94,19 @@ def active_model() -> dict:
 
 
 # --- map data ------------------------------------------------------------------------
+# declared before /map/{city}/{business_type}, which would otherwise capture it
+@app.get("/map/{city}/pois", dependencies=[Auth])
+@limiter.limit("30/minute")
+def map_pois(request: Request, city: str) -> dict:  # noqa: ARG001
+    """Points of interest of a city: existing businesses (role=business) and attractors."""
+    return {"city": core._city(city), "pois": core.list_pois(city)}
+
+
 @app.get("/map/{city}/{business_type}", dependencies=[Auth])
 @limiter.limit("30/minute")
 def map_scores(request: Request, city: str, business_type: str) -> dict:  # noqa: ARG001 - slowapi needs request
     """All scored hexagons of a city for one business type (deck.gl H3HexagonLayer input)."""
-    c, bt = core._city(city), core._business(business_type)
-    active = core._active()
-    with engine("ro").connect() as con:
-        rows = con.execute(text("""
-            SELECT s.h3_id, round(s.final_score::numeric, 4) AS final_score, round(s.suitability::numeric, 4) AS suitability,
-                   round(s.saturation::numeric, 4) AS saturation, s.rank, s.n_existing, s.opportunity, s.low_confidence
-            FROM serving.scores s WHERE s.model_version = :mv AND s.city = :c AND s.business_type = :bt"""),
-            {"mv": active["model_version"], "c": c, "bt": bt}).mappings().all()
-        comps = con.execute(text("""SELECT name, ST_X(geom) AS lon, ST_Y(geom) AS lat FROM serving.pois
-            WHERE city = :c AND category = :bt"""), {"c": c, "bt": bt}).mappings().all()
-    return {"city": c, "business_type": bt, "model_version": active["model_version"], "data_date": active["data_date"],
-            "cells": [{k: (float(v) if hasattr(v, "is_finite") else v) for k, v in r.items()} for r in rows],
-            "competitors": [dict(r) for r in comps]}
+    return core.map_cells(city, business_type)
 
 
 # --- tools -----------------------------------------------------------------------------
@@ -137,10 +141,72 @@ def stats(request: Request, body: StatsRequest) -> dict:  # noqa: ARG001
     return core.query_stats(body.sql)
 
 
+def _chat_provider(body: ChatRequest) -> str:
+    provider = (body.provider or settings.llm_provider).lower()
+    if provider == "anthropic" and not (os.getenv("ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_AUTH_TOKEN")):
+        raise HTTPException(status_code=503, detail="The assistant is not configured: set ANTHROPIC_API_KEY in .env "
+                            "(or LLM_PROVIDER=ollama) and restart the api service.")
+    return provider
+
+
+def _llm_error(exc: Exception, provider: str) -> str:
+    """A readable reason for a failed LLM call; full details go to the server log."""
+    if isinstance(exc, httpx.ConnectError) and provider == "ollama":
+        return (f"Ollama is not reachable at {settings.ollama_url}. Start it with "
+                "`docker compose --profile local-llm up -d ollama` (and pull the model), or set LLM_PROVIDER=anthropic.")
+    body_ = getattr(exc, "body", None)  # Anthropic errors (billing, rate limit, invalid model…)
+    reason = body_.get("error", {}).get("message") if isinstance(body_, dict) else None
+    return f"The language model call failed: {reason or str(exc) or type(exc).__name__}"
+
+
+def _ask(body: ChatRequest, provider: str, on_event=None):
+    from geomlab.genai.agent import ask
+
+    return ask(body.message, [t.model_dump() for t in body.history], provider=provider,
+               context=body.context.model_dump() if body.context else None, on_event=on_event)
+
+
 @app.post("/chat", dependencies=[Auth])
 @limiter.limit("10/minute")
 def chat(request: Request, body: ChatRequest) -> dict:  # noqa: ARG001
-    from geomlab.genai.agent import ask
-
-    answer = ask(body.message, [t.model_dump() for t in body.history], provider=body.provider)
+    provider = _chat_provider(body)
+    try:
+        answer = _ask(body, provider)
+    except Exception as exc:  # LLM provider/network errors → readable 502, details in the server log
+        log.exception("chat_failed provider=%s", provider)
+        raise HTTPException(status_code=502, detail=_llm_error(exc, provider)) from exc
     return answer.to_dict()
+
+
+@app.post("/chat/stream", dependencies=[Auth])
+@limiter.limit("10/minute")
+def chat_stream(request: Request, body: ChatRequest) -> StreamingResponse:  # noqa: ARG001
+    """Same as /chat, streamed as NDJSON events: tool / tool_result / delta / reset, then one
+    ``done`` (the /chat response) or ``error``. ``ping`` lines keep proxies from timing out
+    while a local model reads a long prompt."""
+    provider = _chat_provider(body)
+    events: queue.Queue = queue.Queue()
+
+    def work() -> None:
+        try:
+            events.put({"type": "done", **_ask(body, provider, on_event=events.put).to_dict()})
+        except Exception as exc:  # noqa: BLE001 - reported to the client as an error event
+            log.exception("chat_failed provider=%s", provider)
+            events.put({"type": "error", "detail": _llm_error(exc, provider)})
+        finally:
+            events.put(None)
+
+    threading.Thread(target=work, daemon=True).start()
+
+    def stream():
+        while True:
+            try:
+                ev = events.get(timeout=10)
+            except queue.Empty:
+                ev = {"type": "ping"}
+            if ev is None:
+                return
+            yield json.dumps(ev, ensure_ascii=False, default=str) + "\n"
+
+    return StreamingResponse(stream(), media_type="application/x-ndjson",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

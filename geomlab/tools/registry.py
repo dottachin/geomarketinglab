@@ -16,21 +16,23 @@ def _schemas() -> list[dict]:
     return [
         {"name": "recommend_locations",
          "description": "Rank the best hexagons (H3 cells) in a city to open a business type, from the deep "
-                        "learning model's precomputed scores. Returns rank, final_score, suitability, saturation, "
-                        "competitors, confidence flags, model_version and data_date. Use for any 'where should "
+                        "learning model's precomputed scores. Returns rank, the place names (district, neighbourhood, "
+                        "nearby landmark), final_score, suitability, saturation, competitors, confidence flags, model_version and data_date. Use for any 'where should "
                         "I open…' question.",
          "input_schema": {"type": "object", "additionalProperties": False, "required": ["business_type", "city"],
                           "properties": {
                               "business_type": {"type": "string", "enum": bts},
                               "city": {"type": "string", "enum": cs},
                               "k": {"type": "integer", "minimum": 1, "maximum": core.MAX_K, "default": 10},
-                              "district": {"type": "string", "description": "Arrondissement / commune name filter (partial match)"},
+                              "district": {"type": "string", "description": "Area filter (partial match) on the arrondissement / commune "
+                                                                         "or the neighbourhood name"},
                               "max_competitors": {"type": "integer", "description": "Max same-type businesses in the catchment"},
                               "min_population": {"type": "number", "description": "Min residents in the catchment"},
                               "exclude_low_confidence": {"type": "boolean"},
                               "opportunity_only": {"type": "boolean", "description": "Only high-suitability cells with no existing business"}}}},
         {"name": "explain_location",
-         "description": "Explain one hexagon's score for a business type: SHAP drivers (what raises/lowers it), "
+         "description": "Explain one hexagon's score for a business type: place names (district, "
+                        "neighbourhood, landmark), city rank out of n_cells, SHAP drivers (what raises/lowers it), "
                         "key statistics, nearby competitors with distances, neighbouring cells, confidence.",
          "input_schema": {"type": "object", "additionalProperties": False, "required": ["h3_id", "business_type"],
                           "properties": {"h3_id": {"type": "string"}, "business_type": {"type": "string", "enum": bts}}}},
@@ -88,3 +90,36 @@ def call(name: str, args: dict[str, Any]) -> tuple[dict, bool]:
 
 def to_json(payload: dict) -> str:
     return json.dumps(payload, ensure_ascii=False, default=str)
+
+
+# Keys the LLM does not need to answer (coordinates, long definitions, provenance details).
+# Dropping them keeps tool results small: a local CPU model reads ~15 tokens/s, so every
+# kilobyte of JSON costs it about 20 seconds.
+_LLM_DROP = {"lon", "lat", "centroid", "source_path", "filters", "score_definition", "how_to_read_drivers",
+             "model_family", "family", "source", "evidence"}
+
+
+def compact(value: Any, max_list: int = 10, max_text: int = 700) -> Any:
+    """Shrink a tool payload for the LLM: drop unneeded keys, empty values and long tails,
+    round floats. The full payload is still used for citations and the UI."""
+    if isinstance(value, dict):
+        out = {}
+        for k, v in value.items():
+            if k in _LLM_DROP:
+                continue
+            v = compact(v, max_list, max_text)
+            if v is None or v == [] or v == {}:
+                continue
+            out[k] = v
+        return out
+    if isinstance(value, list):
+        return [compact(v, max_list, max_text) for v in value[:max_list]]
+    if isinstance(value, float):
+        return round(value) if abs(value) >= 100 else round(value, 3)
+    if isinstance(value, str) and len(value) > max_text:
+        return value[:max_text] + "…"
+    return value
+
+
+def to_llm_json(payload: dict) -> str:
+    return json.dumps(compact(payload), ensure_ascii=False, default=str, separators=(",", ":"))

@@ -1,0 +1,29 @@
+# GeoMarketingLab — human place names for H3 cells (silver.cell_names → serving.cells).
+# Labels for the UI only: never model features. Distances are measured from the cell centre
+# in the city's projected CRS (geomlab/geo.py).
+
+# OSM place=* values collected into silver.places (nodes with a name).
+place_types: [neighbourhood, quarter, suburb]
+
+# Neighbourhood = nearest place node of the first tier that has one within its radius.
+# Fine-grained places win over a large suburb even if the suburb node is closer.
+neighbourhood:
+  tiers:
+    - {places: [neighbourhood, quarter], radius_m: 800}
+    - {places: [suburb], radius_m: 2000}
+
+# Landmark = named POI (silver.poi categories) within radius_m of the cell centre with the
+# lowest score = distance_m - bonus_m[category]: a mall 300 m away beats a school at 150 m.
+# Categories not listed are never used as landmarks.
+landmark:
+  radius_m: 400
+  bonus_m:
+    mall: 250
+    train_station: 250
+    university: 200
+    hospital: 200
+    tram_stop: 150
+    market: 150
+    clinic: 50
+    mosque: 50
+    school: 0
