@@ -1,0 +1,47 @@
+Copyright (c) 2026 dottachin. All rights reserved.
+
+PROPRIETARY AND CONFIDENTIAL - VIEW-ONLY LICENSE
+
+This repository and everything in it, including source code, documentation,
+designs, logos and other assets (the "Software"), are the property of the
+copyright holder and are protected by copyright law.
+
+The Software is published for portfolio and demonstration purposes only.
+You may view and read the Software on the platform where it is hosted.
+
+You may NOT, without prior written permission from the copyright holder:
+
+  1. copy, reproduce, or download the Software, in whole or in part, except
+     for the temporary copy your browser makes in order to display it;
+  2. use, run, deploy, or host the Software, or any part of it, for any
+     purpose, commercial or non-commercial;
+  3. modify, adapt, translate, or create derivative works based on the
+     Software;
+  4. distribute, publish, sublicense, sell, lease, or otherwise make the
+     Software available to any third party;
+  5. use the Software, or any part of it, to train or develop machine
+     learning models or competing products;
+  6. remove or alter this notice or any copyright, trademark, or other
+     proprietary notice in the Software.
+
+No license or other right is granted, either expressly or by implication,
+other than the limited right to view described above. The name "GeoMarketingLab"
+and the GeoMarketingLab logo are not licensed for use by anyone else.
+
+This notice does not apply to third-party material. Open-source dependencies
+keep their own licenses, and data from third parties keeps the terms of its
+source: OpenStreetMap (ODbL, (c) OpenStreetMap contributors), HCP census data,
+and Copernicus Sentinel-2, NOAA VIIRS, WorldPop and Dynamic World imagery
+accessed through Google Earth Engine.
+
+This work was carried out as an end-of-study project (PFE, Master MSDE). The
+examination jury and the host institution may read and run it for the
+purpose of evaluating the project.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED. IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM,
+DAMAGES, OR OTHER LIABILITY ARISING FROM, OUT OF, OR IN CONNECTION WITH THE
+SOFTWARE.
+
+For licensing, purchase, or other inquiries, contact the copyright holder
+through their GitHub profile: https://github.com/dottachin
